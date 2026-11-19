@@ -1,0 +1,70 @@
+name: Automated Website Check
+
+on:
+  schedule:
+    - cron: '0 * * * *' # প্রতি ঘণ্টায় চলবে
+  workflow_dispatch:      # ম্যানুয়ালি স্টার্ট করার জন্য
+
+jobs:
+  website-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Dependencies
+        run: |
+          npm init -y
+          npm install @playwright/test playwright
+          npx playwright install --with-deps
+
+      - name: Create Test Script
+        run: |
+          mkdir -p tests
+          cat << 'EOF' > tests/check.spec.js
+          const { test, expect } = require('@playwright/test');
+          const fs = require('fs');
+
+          const urls = [
+            'https://example.com',
+            'https://google.com'
+          ];
+
+          const results = [];
+
+          for (const url of urls) {
+            test(`Checking ${url}`, async ({ page }) => {
+              const startTime = Date.now();
+              try {
+                const response = await page.goto(url, { timeout: 30000 });
+                const duration = Date.now() - startTime;
+                const status = response.status();
+                const ok = response.ok();
+                results.push({ url, status, duration, ok, error: null });
+              } catch (error) {
+                const duration = Date.now() - startTime;
+                results.push({ url, status: 'Failed', duration, ok: false, error: error.message });
+              }
+            });
+          }
+
+          test.afterAll(async () => {
+            fs.writeFileSync('report.json', JSON.stringify(results, null, 2));
+            console.log('Test Report:', JSON.stringify(results, null, 2));
+          });
+          EOF
+
+      - name: Run Tests
+        run: npx playwright test
+
+      - name: Save Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: website-test-report
+          path: report.json
+          
